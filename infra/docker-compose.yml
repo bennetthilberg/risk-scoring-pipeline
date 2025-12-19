@@ -1,0 +1,127 @@
+services:
+  # ============================================================================
+  # PostgreSQL - Primary data store
+  # ============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: risk-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: riskdb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # Redpanda - Kafka-compatible streaming (simpler than Kafka+Zookeeper)
+  # ============================================================================
+  redpanda:
+    image: redpandadata/redpanda:v24.1.1
+    container_name: risk-redpanda
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=512M
+      - --reserve-memory=0M
+      - --overprovisioned
+      - --node-id=0
+      - --kafka-addr=PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://redpanda:29092,OUTSIDE://localhost:9092
+      - --pandaproxy-addr=0.0.0.0:8082
+      - --advertise-pandaproxy-addr=localhost:8082
+    ports:
+      - "9092:9092"       # Kafka API (external)
+      - "29092:29092"     # Kafka API (internal/docker network)
+      - "8082:8082"       # HTTP Proxy API
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD", "rpk", "cluster", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # Redpanda Console - Web UI for Kafka topics
+  # ============================================================================
+  redpanda-console:
+    image: redpandadata/console:v2.4.3
+    container_name: risk-redpanda-console
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_BROKERS: redpanda:29092
+    profiles:
+      - full  # Only starts with --profile full
+
+  # ============================================================================
+  # Topic initialization (runs once and exits)
+  # ============================================================================
+  init-topics:
+    image: redpandadata/redpanda:v24.1.1
+    container_name: risk-init-topics
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    entrypoint: /bin/bash
+    command: |
+      -c '
+      rpk topic create risk.events --brokers redpanda:29092 -p 3 || true
+      rpk topic create risk.events.dlq --brokers redpanda:29092 -p 1 || true
+      rpk topic list --brokers redpanda:29092
+      echo "Topics initialized successfully"
+      '
+    restart: "no"
+
+  # ============================================================================
+  # Prometheus - Metrics collection
+  # ============================================================================
+  prometheus:
+    image: prom/prometheus:v2.49.0
+    container_name: risk-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    profiles:
+      - full  # Only starts with --profile full
+
+  # ============================================================================
+  # Grafana - Dashboards
+  # ============================================================================
+  grafana:
+    image: grafana/grafana:10.3.1
+    container_name: risk-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ../dashboards:/etc/grafana/provisioning/dashboards:ro
+    profiles:
+      - full  # Only starts with --profile full
+
+volumes:
+  postgres_data:
+  redpanda_data:
+  prometheus_data:
+  grafana_data:

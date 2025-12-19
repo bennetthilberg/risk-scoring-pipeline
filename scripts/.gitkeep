@@ -1,0 +1,4 @@
+# Placeholder to keep directory in git
+# Scripts will be added here:
+# - generate_events.py (demo data generation)
+# - loadtest.js (k6 load testing)
