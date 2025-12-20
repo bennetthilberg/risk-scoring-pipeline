@@ -85,6 +85,60 @@ services:
     restart: "no"
 
   # ============================================================================
+  # API Service - FastAPI ingest endpoint
+  # ============================================================================
+  api:
+    build:
+      context: ..
+      dockerfile: services/api/Dockerfile
+    container_name: risk-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      init-topics:
+        condition: service_completed_successfully
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/riskdb
+      KAFKA_BROKERS: redpanda:29092
+      KAFKA_TOPIC: risk.events
+      DLQ_TOPIC: risk.events.dlq
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - services
+
+  # ============================================================================
+  # Scorer Worker - Kafka consumer for scoring events
+  # ============================================================================
+  scorer:
+    build:
+      context: ..
+      dockerfile: services/scorer/Dockerfile
+    container_name: risk-scorer
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+      init-topics:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/riskdb
+      KAFKA_BROKERS: redpanda:29092
+      KAFKA_TOPIC: risk.events
+      DLQ_TOPIC: risk.events.dlq
+      CONSUMER_GROUP: risk-scorer
+    profiles:
+      - services
+
+  # ============================================================================
   # Prometheus - Metrics collection
   # ============================================================================
   prometheus:
