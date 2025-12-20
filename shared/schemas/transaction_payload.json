@@ -1,0 +1,36 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "amount": {
+      "exclusiveMinimum": 0,
+      "title": "Amount",
+      "type": "number"
+    },
+    "country": {
+      "maxLength": 2,
+      "minLength": 2,
+      "title": "Country",
+      "type": "string"
+    },
+    "currency": {
+      "maxLength": 3,
+      "minLength": 3,
+      "title": "Currency",
+      "type": "string"
+    },
+    "merchant": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Merchant",
+      "type": "string"
+    }
+  },
+  "required": [
+    "amount",
+    "currency",
+    "merchant",
+    "country"
+  ],
+  "title": "TransactionPayload",
+  "type": "object"
+}

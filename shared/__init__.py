@@ -1,8 +1,64 @@
-"""
-Shared modules for the risk scoring pipeline.
+from shared.config import Settings, get_settings
+from shared.enums import (
+    CURRENT_SCHEMA_VERSION,
+    RISK_BAND_THRESHOLDS,
+    EventType,
+    ProcessingStatus,
+    RiskBand,
+    score_to_band,
+)
+from shared.features import FEATURE_DEFAULTS, FEATURE_ORDER
+from shared.kafka import (
+    deserialize_event,
+    deserialize_message,
+    get_message_key,
+    serialize_event,
+)
+from shared.schemas import (
+    EventAcceptedResponse,
+    EventBase,
+    EventEnvelope,
+    HealthResponse,
+    LoginEvent,
+    LoginPayload,
+    PayloadType,
+    RiskScoreResponse,
+    SignupEvent,
+    SignupPayload,
+    TransactionEvent,
+    TransactionPayload,
+    parse_event,
+)
+from shared.utils import compute_payload_hash, utcnow
 
-Contains:
-- Pydantic event models (schemas)
-- Constants and configuration
-- Utility functions
-"""
+__all__ = [
+    "CURRENT_SCHEMA_VERSION",
+    "EventAcceptedResponse",
+    "EventBase",
+    "EventEnvelope",
+    "EventType",
+    "FEATURE_DEFAULTS",
+    "FEATURE_ORDER",
+    "HealthResponse",
+    "LoginEvent",
+    "LoginPayload",
+    "PayloadType",
+    "ProcessingStatus",
+    "RISK_BAND_THRESHOLDS",
+    "RiskBand",
+    "RiskScoreResponse",
+    "Settings",
+    "SignupEvent",
+    "SignupPayload",
+    "TransactionEvent",
+    "TransactionPayload",
+    "compute_payload_hash",
+    "deserialize_event",
+    "deserialize_message",
+    "get_message_key",
+    "get_settings",
+    "parse_event",
+    "score_to_band",
+    "serialize_event",
+    "utcnow",
+]

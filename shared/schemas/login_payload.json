@@ -1,0 +1,28 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "device_id": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Device Id",
+      "type": "string"
+    },
+    "ip": {
+      "maxLength": 45,
+      "minLength": 7,
+      "title": "Ip",
+      "type": "string"
+    },
+    "success": {
+      "title": "Success",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "ip",
+    "success",
+    "device_id"
+  ],
+  "title": "LoginPayload",
+  "type": "object"
+}

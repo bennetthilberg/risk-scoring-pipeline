@@ -1,0 +1,74 @@
+{
+  "$defs": {
+    "LoginPayload": {
+      "additionalProperties": false,
+      "properties": {
+        "device_id": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Device Id",
+          "type": "string"
+        },
+        "ip": {
+          "maxLength": 45,
+          "minLength": 7,
+          "title": "Ip",
+          "type": "string"
+        },
+        "success": {
+          "title": "Success",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ip",
+        "success",
+        "device_id"
+      ],
+      "title": "LoginPayload",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "format": "uuid",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "event_type": {
+      "const": "login",
+      "default": "login",
+      "title": "Event Type",
+      "type": "string"
+    },
+    "payload": {
+      "$ref": "#/$defs/LoginPayload"
+    },
+    "schema_version": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "ts": {
+      "format": "date-time",
+      "title": "Ts",
+      "type": "string"
+    },
+    "user_id": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "User Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "event_id",
+    "user_id",
+    "ts",
+    "payload"
+  ],
+  "title": "LoginEvent",
+  "type": "object"
+}
