@@ -57,14 +57,16 @@ class TestDeserializeEvent:
             deserialize_event(b"not valid json")
 
     def test_deserialize_unknown_type_raises(self, fixed_uuid, fixed_timestamp):
-        data = json.dumps({
-            "event_id": str(fixed_uuid),
-            "event_type": "unknown",
-            "user_id": "user-001",
-            "ts": fixed_timestamp.isoformat(),
-            "schema_version": 1,
-            "payload": {},
-        }).encode("utf-8")
+        data = json.dumps(
+            {
+                "event_id": str(fixed_uuid),
+                "event_type": "unknown",
+                "user_id": "user-001",
+                "ts": fixed_timestamp.isoformat(),
+                "schema_version": 1,
+                "payload": {},
+            }
+        ).encode("utf-8")
 
         with pytest.raises(ValueError, match="Unknown event type"):
             deserialize_event(data)

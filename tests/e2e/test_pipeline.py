@@ -78,11 +78,7 @@ class TestFullPipeline:
 
         process_message(msg, db_session)
 
-        score = (
-            db_session.query(RiskScore)
-            .filter_by(user_id=test_user_id)
-            .first()
-        )
+        score = db_session.query(RiskScore).filter_by(user_id=test_user_id).first()
         assert score is not None
         assert 0.0 <= score.score <= 1.0
         assert score.band in ["low", "med", "high"]

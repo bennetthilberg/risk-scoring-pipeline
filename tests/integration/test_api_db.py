@@ -34,17 +34,13 @@ def integration_client(db_session, mock_producer):
 
 @pytest.mark.integration
 class TestAPIWithDatabase:
-    def test_post_event_writes_to_db(
-        self, integration_client, sample_signup_event, db_session
-    ):
+    def test_post_event_writes_to_db(self, integration_client, sample_signup_event, db_session):
         response = integration_client.post("/events", json=sample_signup_event)
         assert response.status_code == 202
 
         from shared.db import Event
 
-        event = db_session.query(Event).filter_by(
-            event_id=sample_signup_event["event_id"]
-        ).first()
+        event = db_session.query(Event).filter_by(event_id=sample_signup_event["event_id"]).first()
 
         assert event is not None
         assert event.user_id == sample_signup_event["user_id"]
@@ -59,9 +55,7 @@ class TestAPIWithDatabase:
 
         from shared.db import Event
 
-        event = db_session.query(Event).filter_by(
-            event_id=sample_signup_event["event_id"]
-        ).first()
+        event = db_session.query(Event).filter_by(event_id=sample_signup_event["event_id"]).first()
 
         assert event is not None
         assert len(event.raw_payload_hash) == 64
@@ -115,3 +109,82 @@ class TestMigrations:
 
         scores_indexes = {idx["name"] for idx in inspector.get_indexes("risk_scores")}
         assert "ix_risk_scores_user_id_computed_at" in scores_indexes
+
+
+@pytest.mark.integration
+class TestAPIIdempotency:
+    def test_duplicate_event_returns_202(self, integration_client, sample_signup_event, db_session):
+        response1 = integration_client.post("/events", json=sample_signup_event)
+        assert response1.status_code == 202
+
+        response2 = integration_client.post("/events", json=sample_signup_event)
+        assert response2.status_code == 202
+
+        data = response2.json()
+        assert data["event_id"] == sample_signup_event["event_id"]
+        assert data["status"] == "accepted"
+
+    def test_duplicate_event_no_duplicate_db_record(
+        self, integration_client, sample_signup_event, db_session
+    ):
+        integration_client.post("/events", json=sample_signup_event)
+        integration_client.post("/events", json=sample_signup_event)
+
+        from shared.db import Event
+
+        events = db_session.query(Event).filter_by(event_id=sample_signup_event["event_id"]).all()
+        assert len(events) == 1
+
+    def test_duplicate_with_unpublished_retries_publish(
+        self, integration_client, sample_signup_event, db_session, mock_producer
+    ):
+        from shared import utcnow
+        from shared.db import Event
+
+        event = Event(
+            event_id=sample_signup_event["event_id"],
+            user_id=sample_signup_event["user_id"],
+            event_type="signup",
+            ts=utcnow(),
+            schema_version=1,
+            payload_json=sample_signup_event["payload"],
+            raw_payload_hash="abc123",
+            accepted_at=utcnow(),
+            published_at=None,
+        )
+        db_session.add(event)
+        db_session.commit()
+
+        mock_producer.produce.reset_mock()
+
+        response = integration_client.post("/events", json=sample_signup_event)
+        assert response.status_code == 202
+
+        mock_producer.produce.assert_called_once()
+
+    def test_published_event_not_republished(
+        self, integration_client, sample_signup_event, db_session, mock_producer
+    ):
+        from shared import utcnow
+        from shared.db import Event
+
+        event = Event(
+            event_id=sample_signup_event["event_id"],
+            user_id=sample_signup_event["user_id"],
+            event_type="signup",
+            ts=utcnow(),
+            schema_version=1,
+            payload_json=sample_signup_event["payload"],
+            raw_payload_hash="abc123",
+            accepted_at=utcnow(),
+            published_at=utcnow(),
+        )
+        db_session.add(event)
+        db_session.commit()
+
+        mock_producer.produce.reset_mock()
+
+        response = integration_client.post("/events", json=sample_signup_event)
+        assert response.status_code == 202
+
+        mock_producer.produce.assert_not_called()

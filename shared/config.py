@@ -11,9 +11,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    database_url: str = Field(
-        default="postgresql://postgres:postgres@localhost:5432/riskdb"
-    )
+    database_url: str = Field(default="postgresql://postgres:postgres@localhost:5432/riskdb")
     kafka_brokers: str = Field(default="localhost:9092")
     kafka_topic: str = Field(default="risk.events")
     dlq_topic: str = Field(default="risk.events.dlq")

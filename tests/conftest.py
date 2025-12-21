@@ -57,7 +57,9 @@ def fixed_timestamp() -> datetime:
 
 
 @pytest.fixture
-def sample_signup_event(fixed_uuid: uuid.UUID, fixed_user_id: str, fixed_timestamp: datetime) -> dict:
+def sample_signup_event(
+    fixed_uuid: uuid.UUID, fixed_user_id: str, fixed_timestamp: datetime
+) -> dict:
     """A sample signup event payload."""
     return {
         "event_id": str(fixed_uuid),
@@ -204,7 +206,9 @@ def test_topics(test_topic_suffix: str) -> dict[str, str]:
 
 
 @pytest.fixture
-def create_test_topics(kafka_admin, test_topics: dict[str, str]) -> Generator[dict[str, str], None, None]:
+def create_test_topics(
+    kafka_admin, test_topics: dict[str, str]
+) -> Generator[dict[str, str], None, None]:
     """Create test topics and clean up after test.
 
     Yields the topic names dict for use in tests.
@@ -249,12 +253,14 @@ def kafka_consumer(kafka_brokers: str, test_topics: dict[str, str]):
     """
     from confluent_kafka import Consumer
 
-    consumer = Consumer({
-        "bootstrap.servers": kafka_brokers,
-        "group.id": f"test-consumer-{uuid.uuid4()}",
-        "auto.offset.reset": "earliest",
-        "enable.auto.commit": False,
-    })
+    consumer = Consumer(
+        {
+            "bootstrap.servers": kafka_brokers,
+            "group.id": f"test-consumer-{uuid.uuid4()}",
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": False,
+        }
+    )
     consumer.subscribe([test_topics["events"]])
     yield consumer
     consumer.close()

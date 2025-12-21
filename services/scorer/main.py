@@ -25,12 +25,14 @@ def signal_handler(signum: int, frame: FrameType | None) -> None:
 
 
 def create_consumer(settings: Settings) -> Consumer:
-    return Consumer({
-        "bootstrap.servers": settings.kafka_brokers,
-        "group.id": settings.consumer_group,
-        "auto.offset.reset": "earliest",
-        "enable.auto.commit": False,
-    })
+    return Consumer(
+        {
+            "bootstrap.servers": settings.kafka_brokers,
+            "group.id": settings.consumer_group,
+            "auto.offset.reset": "earliest",
+            "enable.auto.commit": False,
+        }
+    )
 
 
 def run_worker(max_messages: int | None = None) -> int:

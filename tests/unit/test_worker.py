@@ -1,11 +1,12 @@
 import json
-from unittest.mock import MagicMock
+import uuid
+from unittest.mock import MagicMock, PropertyMock
 
 import pytest
 
-from services.scorer.processor import process_message
+from services.scorer.processor import is_already_processed, mark_processed, process_message
 from services.scorer.scoring import compute_dummy_score
-from shared import RiskBand
+from shared import ProcessingStatus, RiskBand
 
 
 @pytest.mark.unit
@@ -52,12 +53,67 @@ class TestComputeDummyScore:
 
 
 @pytest.mark.unit
+class TestIsAlreadyProcessed:
+    def test_returns_true_when_processed(self):
+        db = MagicMock()
+        db.execute.return_value.first.return_value = (uuid.uuid4(),)
+
+        event_id = uuid.uuid4()
+        result = is_already_processed(event_id, db)
+
+        assert result is True
+        db.execute.assert_called_once()
+
+    def test_returns_false_when_not_processed(self):
+        db = MagicMock()
+        db.execute.return_value.first.return_value = None
+
+        event_id = uuid.uuid4()
+        result = is_already_processed(event_id, db)
+
+        assert result is False
+
+
+@pytest.mark.unit
+class TestMarkProcessed:
+    def test_returns_true_when_inserted(self):
+        db = MagicMock()
+        execute_result = MagicMock()
+        type(execute_result).rowcount = PropertyMock(return_value=1)
+        db.execute.return_value = execute_result
+
+        event_id = uuid.uuid4()
+        result = mark_processed(event_id, ProcessingStatus.SUCCESS, db)
+
+        assert result is True
+        db.execute.assert_called_once()
+
+    def test_returns_false_when_already_exists(self):
+        db = MagicMock()
+        execute_result = MagicMock()
+        type(execute_result).rowcount = PropertyMock(return_value=0)
+        db.execute.return_value = execute_result
+
+        event_id = uuid.uuid4()
+        result = mark_processed(event_id, ProcessingStatus.SUCCESS, db)
+
+        assert result is False
+
+
+@pytest.mark.unit
 class TestProcessMessage:
     def test_process_valid_message(self, sample_signup_event):
         msg = MagicMock()
         msg.value.return_value = json.dumps(sample_signup_event).encode("utf-8")
 
         db = MagicMock()
+        not_processed_result = MagicMock()
+        not_processed_result.first.return_value = None
+
+        mark_success_result = MagicMock()
+        type(mark_success_result).rowcount = PropertyMock(return_value=1)
+
+        db.execute.side_effect = [not_processed_result, mark_success_result]
 
         result = process_message(msg, db)
 
@@ -65,26 +121,17 @@ class TestProcessMessage:
         db.add.assert_called_once()
         db.commit.assert_called_once()
 
-    def test_process_login_event(self, sample_login_event):
+    def test_process_skips_already_processed(self, sample_signup_event):
         msg = MagicMock()
-        msg.value.return_value = json.dumps(sample_login_event).encode("utf-8")
+        msg.value.return_value = json.dumps(sample_signup_event).encode("utf-8")
 
         db = MagicMock()
+        db.execute.return_value.first.return_value = (uuid.uuid4(),)
 
         result = process_message(msg, db)
 
         assert result is True
-        db.add.assert_called_once()
-
-    def test_process_transaction_event(self, sample_transaction_event):
-        msg = MagicMock()
-        msg.value.return_value = json.dumps(sample_transaction_event).encode("utf-8")
-
-        db = MagicMock()
-
-        result = process_message(msg, db)
-
-        assert result is True
+        db.add.assert_not_called()
 
     def test_process_invalid_message(self):
         msg = MagicMock()
@@ -102,6 +149,13 @@ class TestProcessMessage:
         msg.value.return_value = json.dumps(sample_signup_event).encode("utf-8")
 
         db = MagicMock()
+        not_processed_result = MagicMock()
+        not_processed_result.first.return_value = None
+
+        mark_success_result = MagicMock()
+        type(mark_success_result).rowcount = PropertyMock(return_value=1)
+
+        db.execute.side_effect = [not_processed_result, mark_success_result]
 
         process_message(msg, db)
 
@@ -113,3 +167,21 @@ class TestProcessMessage:
         assert 0.0 <= added_object.score <= 1.0
         assert added_object.band in ["low", "med", "high"]
         assert added_object.model_version == "dummy-v1"
+
+    def test_process_handles_concurrent_processing(self, sample_signup_event):
+        msg = MagicMock()
+        msg.value.return_value = json.dumps(sample_signup_event).encode("utf-8")
+
+        db = MagicMock()
+        not_processed_result = MagicMock()
+        not_processed_result.first.return_value = None
+
+        mark_failed_result = MagicMock()
+        type(mark_failed_result).rowcount = PropertyMock(return_value=0)
+
+        db.execute.side_effect = [not_processed_result, mark_failed_result]
+
+        result = process_message(msg, db)
+
+        assert result is True
+        db.rollback.assert_called_once()

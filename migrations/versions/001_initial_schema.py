@@ -46,7 +46,10 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name=op.f("pk_risk_scores")),
     )
     op.create_index(
-        "ix_risk_scores_user_id_computed_at", "risk_scores", ["user_id", "computed_at"], unique=False
+        "ix_risk_scores_user_id_computed_at",
+        "risk_scores",
+        ["user_id", "computed_at"],
+        unique=False,
     )
 
     op.create_table(
