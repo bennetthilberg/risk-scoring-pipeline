@@ -7,7 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from services.api.dependencies import set_db_session_factory, set_kafka_producer
-from services.api.routes import events, health, scores
+from services.api.routes import dlq, events, health, scores
 from shared.config import get_settings
 
 if TYPE_CHECKING:
@@ -50,6 +50,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router, tags=["health"])
     app.include_router(events.router, prefix="/events", tags=["events"])
     app.include_router(scores.router, prefix="/score", tags=["scores"])
+    app.include_router(dlq.router, prefix="/dlq", tags=["dlq"])
 
     return app
 

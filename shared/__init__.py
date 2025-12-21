@@ -15,6 +15,8 @@ from shared.kafka import (
     serialize_event,
 )
 from shared.schemas import (
+    DLQEntryResponse,
+    DLQListResponse,
     EventAcceptedResponse,
     EventBase,
     EventEnvelope,
@@ -33,6 +35,8 @@ from shared.utils import compute_payload_hash, utcnow
 
 __all__ = [
     "CURRENT_SCHEMA_VERSION",
+    "DLQEntryResponse",
+    "DLQListResponse",
     "EventAcceptedResponse",
     "EventBase",
     "EventEnvelope",

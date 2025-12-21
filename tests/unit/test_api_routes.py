@@ -4,7 +4,7 @@ import pytest
 from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 
-from services.api.routes import events, health, scores
+from services.api.routes import dlq, events, health, scores
 
 
 def create_test_app() -> FastAPI:
@@ -12,6 +12,7 @@ def create_test_app() -> FastAPI:
     app.include_router(health.router, tags=["health"])
     app.include_router(events.router, prefix="/events", tags=["events"])
     app.include_router(scores.router, prefix="/score", tags=["scores"])
+    app.include_router(dlq.router, prefix="/dlq", tags=["dlq"])
     return app
 
 
@@ -170,3 +171,76 @@ class TestScoreEndpoint:
         assert data["user_id"] == "user-001"
         assert data["score"] == 0.45
         assert data["band"] == "med"
+
+
+@pytest.mark.unit
+class TestDLQEndpoint:
+    def test_list_dlq_entries_empty(self, client, mock_db_session):
+        mock_db_session.execute.return_value.scalar.return_value = 0
+        mock_db_session.query.return_value.order_by.return_value.offset.return_value.limit.return_value.all.return_value = []
+
+        response = client.get("/dlq")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["entries"] == []
+        assert data["total"] == 0
+
+    def test_list_dlq_entries_with_data(self, client, mock_db_session, fixed_uuid, fixed_timestamp):
+        from shared.db import DLQEvent
+
+        mock_entry = MagicMock(spec=DLQEvent)
+        mock_entry.id = 1
+        mock_entry.event_id = fixed_uuid
+        mock_entry.raw_payload = '{"test": "data"}'
+        mock_entry.failure_reason = "Test failure"
+        mock_entry.created_at = fixed_timestamp
+        mock_entry.retry_count = 2
+
+        mock_db_session.execute.return_value.scalar.return_value = 1
+        mock_db_session.query.return_value.order_by.return_value.offset.return_value.limit.return_value.all.return_value = [
+            mock_entry
+        ]
+
+        response = client.get("/dlq")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["total"] == 1
+        assert len(data["entries"]) == 1
+        assert data["entries"][0]["id"] == 1
+        assert data["entries"][0]["event_id"] == str(fixed_uuid)
+        assert data["entries"][0]["failure_reason"] == "Test failure"
+        assert data["entries"][0]["retry_count"] == 2
+
+    def test_list_dlq_with_pagination(self, client, mock_db_session):
+        mock_db_session.execute.return_value.scalar.return_value = 0
+        mock_db_session.query.return_value.order_by.return_value.offset.return_value.limit.return_value.all.return_value = []
+
+        response = client.get("/dlq?limit=10&offset=20")
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_get_dlq_entry_not_found(self, client, mock_db_session):
+        mock_db_session.query.return_value.filter_by.return_value.first.return_value = None
+
+        response = client.get("/dlq/999")
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_get_dlq_entry_found(self, client, mock_db_session, fixed_uuid, fixed_timestamp):
+        from shared.db import DLQEvent
+
+        mock_entry = MagicMock(spec=DLQEvent)
+        mock_entry.id = 1
+        mock_entry.event_id = fixed_uuid
+        mock_entry.raw_payload = '{"test": "data"}'
+        mock_entry.failure_reason = "Test failure"
+        mock_entry.created_at = fixed_timestamp
+        mock_entry.retry_count = 3
+
+        mock_db_session.query.return_value.filter_by.return_value.first.return_value = mock_entry
+
+        response = client.get("/dlq/1")
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        assert data["id"] == 1
+        assert data["event_id"] == str(fixed_uuid)
+        assert data["failure_reason"] == "Test failure"
+        assert data["retry_count"] == 3

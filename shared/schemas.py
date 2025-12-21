@@ -96,6 +96,24 @@ class HealthResponse(BaseModel):
     version: str
 
 
+class DLQEntryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: int
+    event_id: UUID | None
+    raw_payload: str
+    failure_reason: str
+    created_at: datetime
+    retry_count: int
+
+
+class DLQListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    entries: list[DLQEntryResponse]
+    total: int
+
+
 def parse_event(data: dict) -> SignupEvent | LoginEvent | TransactionEvent:
     event_type = data.get("event_type")
 

@@ -1,17 +1,23 @@
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from services.scorer.retry import NonRetryableError, RetryableError, send_to_dlq
 from services.scorer.scoring import compute_dummy_score
 from shared import ProcessingStatus, deserialize_event, utcnow
+from shared.config import Settings
 from shared.db import ProcessedEvent, RiskScore
 
 if TYPE_CHECKING:
     from confluent_kafka import Message
+
+    from shared import EventEnvelope
 
 logger = logging.getLogger(__name__)
 
@@ -41,49 +47,146 @@ def mark_processed(event_id: UUID, status: ProcessingStatus, db: Session) -> boo
 def process_message(
     msg: "Message",
     db: Session,
-) -> bool:
+    retry_count: int = 0,
+    settings: Settings | None = None,
+) -> tuple[bool, bool]:
+    """Process a Kafka message and return (success, should_retry).
+
+    Returns:
+        tuple[bool, bool]: (success, should_retry)
+            - success: True if message processed successfully or should be skipped
+            - should_retry: True if message should be retried (only when success=False)
+    """
+    raw_payload = msg.value()
+
     try:
-        event = deserialize_event(msg.value())
+        event = deserialize_event(raw_payload)
+    except (ValidationError, ValueError, TypeError) as e:
+        logger.error(f"Schema validation failed (non-retryable): {e}")
+        send_to_dlq(
+            raw_payload=raw_payload,
+            failure_reason=f"Schema validation failed: {e}",
+            db=db,
+            event_id=None,
+            retry_count=retry_count,
+        )
+        return (True, False)
     except Exception as e:
         logger.error(f"Failed to deserialize message: {e}")
-        return False
+        send_to_dlq(
+            raw_payload=raw_payload,
+            failure_reason=f"Deserialization failed: {e}",
+            db=db,
+            event_id=None,
+            retry_count=retry_count,
+        )
+        return (True, False)
 
     if is_already_processed(event.event_id, db):
         logger.info(f"Event {event.event_id} already processed, skipping")
-        return True
+        return (True, False)
 
     logger.info(f"Processing event {event.event_id} for user {event.user_id}")
 
     try:
-        score, band, top_features = compute_dummy_score(
-            user_id=event.user_id,
-            event_type=event.event_type.value,
-        )
+        _process_event(event, db)
+        return (True, False)
 
-        risk_score = RiskScore(
-            user_id=event.user_id,
-            score=score,
-            band=band.value,
-            computed_at=utcnow(),
-            top_features_json=top_features,
-            model_version="dummy-v1",
-        )
-
-        db.add(risk_score)
-
-        if not mark_processed(event.event_id, ProcessingStatus.SUCCESS, db):
-            logger.warning(f"Event {event.event_id} was processed by another worker")
-            db.rollback()
-            return True
-
-        db.commit()
-
-        logger.info(f"Scored user {event.user_id}: score={score:.3f}, band={band.value}")
-        return True
-
-    except Exception as e:
-        logger.error(f"Failed to process event {event.event_id}: {e}")
+    except NonRetryableError as e:
+        logger.error(f"Non-retryable error for event {event.event_id}: {e}")
         db.rollback()
+        send_to_dlq(
+            raw_payload=raw_payload,
+            failure_reason=str(e),
+            db=db,
+            event_id=event.event_id,
+            retry_count=retry_count,
+        )
         mark_processed(event.event_id, ProcessingStatus.FAILED, db)
         db.commit()
-        return False
+        return (True, False)
+
+    except RetryableError as e:
+        logger.warning(f"Retryable error for event {event.event_id}: {e}")
+        db.rollback()
+        return (False, True)
+
+    except Exception as e:
+        logger.error(f"Unexpected error processing event {event.event_id}: {e}")
+        db.rollback()
+        return (False, True)
+
+
+def _process_event(event: "EventEnvelope", db: Session) -> None:
+    score, band, top_features = compute_dummy_score(
+        user_id=event.user_id,
+        event_type=event.event_type.value,
+    )
+
+    risk_score = RiskScore(
+        user_id=event.user_id,
+        score=score,
+        band=band.value,
+        computed_at=utcnow(),
+        top_features_json=top_features,
+        model_version="dummy-v1",
+    )
+
+    db.add(risk_score)
+
+    if not mark_processed(event.event_id, ProcessingStatus.SUCCESS, db):
+        logger.warning(f"Event {event.event_id} was processed by another worker")
+        db.rollback()
+        return
+
+    db.commit()
+    logger.info(f"Scored user {event.user_id}: score={score:.3f}, band={band.value}")
+
+
+def process_message_with_retries(
+    msg: "Message",
+    db_factory: Callable[[], Session],
+    settings: Settings,
+) -> bool:
+    """Process a message with retry logic.
+
+    Returns True if message was processed successfully (or sent to DLQ).
+    """
+    from services.scorer.retry import send_to_dlq, should_retry, sleep_with_backoff
+
+    retry_count = 0
+    raw_payload = msg.value()
+
+    while True:
+        db = db_factory()
+        try:
+            success, should_retry_flag = process_message(msg, db, retry_count, settings)
+
+            if success:
+                return True
+
+            if not should_retry_flag:
+                return True
+
+            if not should_retry(retry_count, settings.max_retries):
+                logger.error(f"Max retries ({settings.max_retries}) exceeded, sending to DLQ")
+                try:
+                    event = deserialize_event(raw_payload)
+                    event_id = event.event_id
+                except Exception:
+                    event_id = None
+
+                send_to_dlq(
+                    raw_payload=raw_payload,
+                    failure_reason=f"Max retries ({settings.max_retries}) exceeded",
+                    db=db,
+                    event_id=event_id,
+                    retry_count=retry_count,
+                )
+                return True
+
+            retry_count += 1
+            sleep_with_backoff(retry_count - 1, settings)
+
+        finally:
+            db.close()

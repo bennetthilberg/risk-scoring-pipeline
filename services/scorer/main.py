@@ -4,9 +4,9 @@ from types import FrameType
 
 from confluent_kafka import Consumer, KafkaError
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
-from services.scorer.processor import process_message
+from services.scorer.processor import process_message_with_retries
 from shared.config import Settings, get_settings
 
 logging.basicConfig(
@@ -44,10 +44,17 @@ def run_worker(max_messages: int | None = None) -> int:
     engine = create_engine(settings.database_url, pool_pre_ping=True)
     SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
+    def db_factory() -> "Session":
+        return SessionLocal()
+
     consumer = create_consumer(settings)
     consumer.subscribe([settings.kafka_topic])
 
     logger.info(f"Worker started, consuming from {settings.kafka_topic}")
+    logger.info(
+        f"Retry policy: max_retries={settings.max_retries}, "
+        f"base_delay={settings.retry_base_delay_ms}ms"
+    )
 
     messages_processed = 0
 
@@ -68,17 +75,10 @@ def run_worker(max_messages: int | None = None) -> int:
                 logger.error(f"Consumer error: {msg.error()}")
                 continue
 
-            session = SessionLocal()
-            try:
-                success = process_message(msg, session)
-                if success:
-                    consumer.commit(msg)
-                    messages_processed += 1
-            except Exception as e:
-                logger.error(f"Error processing message: {e}")
-                session.rollback()
-            finally:
-                session.close()
+            success = process_message_with_retries(msg, db_factory, settings)
+            if success:
+                consumer.commit(msg)
+                messages_processed += 1
 
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received")
