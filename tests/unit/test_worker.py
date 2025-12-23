@@ -1,6 +1,6 @@
 import json
 import uuid
-from unittest.mock import MagicMock, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
@@ -109,7 +109,12 @@ class TestMarkProcessed:
 
 @pytest.mark.unit
 class TestProcessMessage:
-    def test_process_valid_message(self, sample_signup_event):
+    @patch("services.scorer.processor.compute_score")
+    def test_process_valid_message(self, mock_compute_score, sample_signup_event):
+        from shared import RiskBand
+
+        mock_compute_score.return_value = (0.45, RiskBand.MEDIUM, {"txn_count_24h": 0.1}, "test-v1")
+
         msg = MagicMock()
         msg.value.return_value = json.dumps(sample_signup_event).encode("utf-8")
 
@@ -155,7 +160,12 @@ class TestProcessMessage:
         db.add.assert_called_once()
         db.commit.assert_called_once()
 
-    def test_process_creates_risk_score(self, sample_signup_event):
+    @patch("services.scorer.processor.compute_score")
+    def test_process_creates_risk_score(self, mock_compute_score, sample_signup_event):
+        from shared import RiskBand
+
+        mock_compute_score.return_value = (0.45, RiskBand.MEDIUM, {"txn_count_24h": 0.1}, "test-v1")
+
         msg = MagicMock()
         msg.value.return_value = json.dumps(sample_signup_event).encode("utf-8")
 
@@ -181,11 +191,16 @@ class TestProcessMessage:
 
         assert risk_score_added is not None
         assert risk_score_added.user_id == sample_signup_event["user_id"]
-        assert 0.0 <= risk_score_added.score <= 1.0
-        assert risk_score_added.band in ["low", "med", "high"]
-        assert risk_score_added.model_version == "dummy-v1"
+        assert risk_score_added.score == 0.45
+        assert risk_score_added.band == "med"
+        assert risk_score_added.model_version == "test-v1"
 
-    def test_process_handles_concurrent_processing(self, sample_signup_event):
+    @patch("services.scorer.processor.compute_score")
+    def test_process_handles_concurrent_processing(self, mock_compute_score, sample_signup_event):
+        from shared import RiskBand
+
+        mock_compute_score.return_value = (0.45, RiskBand.MEDIUM, {"txn_count_24h": 0.1}, "test-v1")
+
         msg = MagicMock()
         msg.value.return_value = json.dumps(sample_signup_event).encode("utf-8")
 

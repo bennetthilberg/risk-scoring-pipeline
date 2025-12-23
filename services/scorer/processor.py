@@ -9,7 +9,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from services.scorer.retry import NonRetryableError, RetryableError, send_to_dlq
-from services.scorer.scoring import compute_dummy_score
+from services.scorer.scoring import compute_score
 from shared import ProcessingStatus, deserialize_event, utcnow
 from shared.config import Settings
 from shared.db import ProcessedEvent, RiskScore
@@ -118,9 +118,9 @@ def process_message(
 
 
 def _process_event(event: "EventEnvelope", db: Session) -> None:
-    score, band, top_features = compute_dummy_score(
+    score, band, top_features, model_version = compute_score(
         user_id=event.user_id,
-        event_type=event.event_type.value,
+        db=db,
     )
 
     risk_score = RiskScore(
@@ -129,7 +129,7 @@ def _process_event(event: "EventEnvelope", db: Session) -> None:
         band=band.value,
         computed_at=utcnow(),
         top_features_json=top_features,
-        model_version="dummy-v1",
+        model_version=model_version,
     )
 
     db.add(risk_score)
