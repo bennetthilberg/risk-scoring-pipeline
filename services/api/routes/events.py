@@ -15,6 +15,7 @@ from shared import (
 )
 from shared.config import get_settings
 from shared.db import Event
+from shared.metrics import EVENTS_INGESTED_TOTAL
 
 logger = logging.getLogger(__name__)
 
@@ -73,16 +74,19 @@ async def ingest_event(
     try:
         event = parse_event(event_data)
     except ValueError as e:
+        EVENTS_INGESTED_TOTAL.labels(event_type="unknown", status="invalid").inc()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid event: {e}",
         ) from None
     except Exception as e:
+        EVENTS_INGESTED_TOTAL.labels(event_type="unknown", status="invalid").inc()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Event validation failed: {e}",
         ) from None
 
+    event_type = event.event_type.value
     raw_hash = compute_payload_hash(event_data)
     now = utcnow()
 
@@ -91,7 +95,7 @@ async def ingest_event(
         .values(
             event_id=event.event_id,
             user_id=event.user_id,
-            event_type=event.event_type.value,
+            event_type=event_type,
             ts=event.ts,
             schema_version=event.schema_version,
             payload_json=event.payload.model_dump(),
@@ -113,13 +117,13 @@ async def ingest_event(
                 f"Duplicate event {event.event_id} with unpublished status, retrying publish"
             )
             _publish_event(existing, db)
-        else:
-            logger.info(f"Duplicate event {event.event_id} already processed, skipping")
 
+        EVENTS_INGESTED_TOTAL.labels(event_type=event_type, status="duplicate").inc()
         return EventAcceptedResponse(event_id=event.event_id, status="accepted")
 
     db_event = db.execute(select(Event).where(Event.event_id == event.event_id)).scalar_one()
 
     _publish_event(db_event, db)
 
+    EVENTS_INGESTED_TOTAL.labels(event_type=event_type, status="accepted").inc()
     return EventAcceptedResponse(event_id=event.event_id, status="accepted")

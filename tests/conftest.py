@@ -291,22 +291,22 @@ def mock_db_session() -> MagicMock:
     return session
 
 
-# Note: The following fixtures will be implemented when the API service is built:
-#
-# @pytest.fixture
-# def app(mock_db_session, mock_producer):
-#     """FastAPI app with mocked dependencies for unit tests."""
-#     from services.api.main import create_app
-#     app = create_app()
-#     # Override dependencies
-#     return app
-#
-# @pytest.fixture
-# async def client(app):
-#     """Async HTTP client for testing the API."""
-#     from httpx import ASGITransport, AsyncClient
-#     async with AsyncClient(
-#         transport=ASGITransport(app=app),
-#         base_url="http://test"
-#     ) as client:
-#         yield client
+@pytest.fixture
+def app(mock_db_session, mock_producer):
+    """FastAPI app with mocked dependencies for unit tests."""
+    from services.api.dependencies import set_db_session_factory, set_kafka_producer
+    from services.api.main import create_app
+
+    set_db_session_factory(lambda: mock_db_session)
+    set_kafka_producer(mock_producer)
+
+    return create_app()
+
+
+@pytest.fixture
+async def client(app):
+    """Async HTTP client for testing the API."""
+    from httpx import ASGITransport, AsyncClient
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        yield client
