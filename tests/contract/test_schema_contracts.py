@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from shared.features import FEATURE_DEFAULTS, FEATURE_ORDER
 from shared.schemas import (
     LoginEvent,
     LoginPayload,
@@ -140,3 +141,49 @@ class TestTransactionEventContract:
             "TransactionEvent schema has changed. "
             "If intentional, delete shared/schemas/transaction_event.json and re-run."
         )
+
+
+@pytest.mark.contract
+class TestFeatureOrderContract:
+    def test_feature_order_matches_model_metadata(self):
+        model_metadata_path = Path(__file__).parent.parent.parent / "models" / "metadata.json"
+
+        if not model_metadata_path.exists():
+            pytest.skip("Model metadata not found (run training first)")
+
+        with open(model_metadata_path) as f:
+            metadata = json.load(f)
+
+        model_feature_order = metadata["feature_order"]
+        assert model_feature_order == FEATURE_ORDER, (
+            f"Feature order mismatch between model metadata and shared/features.py.\n"
+            f"Model: {model_feature_order}\n"
+            f"Code: {FEATURE_ORDER}\n"
+            f"If intentional, re-train the model or update FEATURE_ORDER."
+        )
+
+    def test_feature_defaults_match_model_metadata(self):
+        model_metadata_path = Path(__file__).parent.parent.parent / "models" / "metadata.json"
+
+        if not model_metadata_path.exists():
+            pytest.skip("Model metadata not found (run training first)")
+
+        with open(model_metadata_path) as f:
+            metadata = json.load(f)
+
+        model_defaults = metadata["feature_defaults"]
+        for feature in FEATURE_ORDER:
+            assert feature in model_defaults, f"Feature {feature} missing from model defaults"
+            assert feature in FEATURE_DEFAULTS, f"Feature {feature} missing from code defaults"
+
+    def test_feature_order_length_consistent(self):
+        assert len(FEATURE_ORDER) == len(FEATURE_DEFAULTS), (
+            f"FEATURE_ORDER has {len(FEATURE_ORDER)} items, "
+            f"but FEATURE_DEFAULTS has {len(FEATURE_DEFAULTS)} items"
+        )
+
+    def test_all_features_have_defaults(self):
+        for feature in FEATURE_ORDER:
+            assert feature in FEATURE_DEFAULTS, (
+                f"Feature '{feature}' is in FEATURE_ORDER but not in FEATURE_DEFAULTS"
+            )
