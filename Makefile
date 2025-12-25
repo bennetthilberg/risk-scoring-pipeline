@@ -1,5 +1,5 @@
 .PHONY: help install dev-install lint format typecheck test itest e2e test-all cov \
-        deps-up deps-down up down logs demo loadtest clean
+        deps-up deps-down up down logs demo demo-large loadtest loadtest-heavy clean
 
 # Default target
 help:
@@ -28,9 +28,11 @@ help:
 	@echo "  down         Stop full stack"
 	@echo "  logs         Tail logs from all containers"
 	@echo ""
-	@echo "Demo:"
-	@echo "  demo         Generate sample events and queries"
-	@echo "  loadtest     Run k6 load test"
+	@echo "Demo & Load Testing:"
+	@echo "  demo            Generate 5 users with sample events"
+	@echo "  demo-large      Generate 100 users with sample events"
+	@echo "  loadtest        Run k6 load test (10 VUs, 30s)"
+	@echo "  loadtest-heavy  Run heavy load test (50 VUs, 60s)"
 	@echo ""
 	@echo "Misc:"
 	@echo "  clean        Remove build artifacts and caches"
@@ -120,10 +122,22 @@ migrate-new:
 # Demo and load testing
 # ============================================================================
 demo:
-	python scripts/generate_events.py
+	@echo "Running demo (generates events and shows example queries)..."
+	python scripts/demo.py --users 5 --events-per-user 10
+
+demo-large:
+	@echo "Running large demo (100 users, 20 events each)..."
+	python scripts/demo.py --users 100 --events-per-user 20
 
 loadtest:
+	@echo "Running load test (10 VUs, 30s)..."
+	@command -v k6 >/dev/null 2>&1 || { echo "k6 not installed. Install with: brew install k6"; exit 1; }
 	k6 run scripts/loadtest.js
+
+loadtest-heavy:
+	@echo "Running heavy load test (50 VUs, 60s)..."
+	@command -v k6 >/dev/null 2>&1 || { echo "k6 not installed. Install with: brew install k6"; exit 1; }
+	K6_VUS=50 K6_DURATION=60s k6 run scripts/loadtest.js
 
 # ============================================================================
 # Cleanup
