@@ -1,4 +1,4 @@
-.PHONY: help install dev-install lint format typecheck test itest e2e test-all cov \
+.PHONY: help install dev-install lint format typecheck test itest e2e smoke test-all cov \
         deps-up deps-down up down logs demo demo-large loadtest loadtest-heavy clean
 
 # Default target
@@ -18,6 +18,7 @@ help:
 	@echo "  test         Run unit + contract tests (fast, no docker)"
 	@echo "  itest        Run integration tests (requires docker deps)"
 	@echo "  e2e          Run end-to-end tests (requires docker deps)"
+	@echo "  smoke        Run smoke tests validating quickstart (requires docker deps)"
 	@echo "  test-all     Run all tests"
 	@echo "  cov          Run tests with coverage report"
 	@echo ""
@@ -70,6 +71,9 @@ itest: deps-up
 
 e2e: deps-up
 	pytest -m e2e
+
+smoke: deps-up migrate topics
+	pytest tests/smoke/ -v
 
 test-all: deps-up
 	pytest

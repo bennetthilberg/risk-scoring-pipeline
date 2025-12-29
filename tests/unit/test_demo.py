@@ -195,9 +195,7 @@ class TestTransactionEventGeneration:
             risky_amounts.append(risky_event["payload"]["amount"])
             normal_amounts.append(normal_event["payload"]["amount"])
 
-        assert sum(risky_amounts) / len(risky_amounts) > sum(normal_amounts) / len(
-            normal_amounts
-        )
+        assert sum(risky_amounts) / len(risky_amounts) > sum(normal_amounts) / len(normal_amounts)
 
 
 @pytest.mark.unit
@@ -249,12 +247,8 @@ class TestUserEventSequenceGeneration:
     def test_deterministic_with_same_seed(self) -> None:
         base_time = datetime.now(UTC)
 
-        events1 = generate_user_event_sequence(
-            "user-001", 10, random.Random(42), base_time
-        )
-        events2 = generate_user_event_sequence(
-            "user-001", 10, random.Random(42), base_time
-        )
+        events1 = generate_user_event_sequence("user-001", 10, random.Random(42), base_time)
+        events2 = generate_user_event_sequence("user-001", 10, random.Random(42), base_time)
 
         for e1, e2 in zip(events1, events2, strict=True):
             assert e1["event_type"] == e2["event_type"]

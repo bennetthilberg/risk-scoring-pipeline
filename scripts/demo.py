@@ -231,9 +231,7 @@ def run_demo(config: DemoConfig) -> dict[str, Any]:
     for i in range(config.num_users):
         user_id = generate_user_id(i)
         user_ids.append(user_id)
-        events = generate_user_event_sequence(
-            user_id, config.events_per_user, rng, base_time
-        )
+        events = generate_user_event_sequence(user_id, config.events_per_user, rng, base_time)
         all_events.extend(events)
 
     total_events = len(all_events)

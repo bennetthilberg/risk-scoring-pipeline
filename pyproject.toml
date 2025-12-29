@@ -65,6 +65,7 @@ markers = [
     "contract: schema/contract tests",
     "integration: requires docker deps (postgres/redpanda)",
     "e2e: end-to-end pipeline tests",
+    "smoke: smoke tests validating quickstart guide",
 ]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
