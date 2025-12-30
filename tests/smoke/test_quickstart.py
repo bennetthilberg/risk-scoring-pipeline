@@ -91,16 +91,27 @@ class TestQuickstartValidation:
 
         inspector = inspect(quickstart_db_session.bind)
 
+        pk_constraint = inspector.get_pk_constraint("events")
         events_unique_constraints = inspector.get_unique_constraints("events")
         events_indexes = inspector.get_indexes("events")
 
-        event_id_unique = any(
+        pk_has_event_id = "event_id" in (pk_constraint.get("constrained_columns", []) or [])
+
+        unique_constraint_has_event_id = any(
             "event_id" in (c.get("column_names", []) or []) for c in events_unique_constraints
-        ) or any(
+        )
+
+        unique_index_has_event_id = any(
             idx.get("unique") and "event_id" in (idx.get("column_names", []) or [])
             for idx in events_indexes
         )
-        assert event_id_unique, "events.event_id should have a unique constraint"
+
+        event_id_unique = (
+            pk_has_event_id or unique_constraint_has_event_id or unique_index_has_event_id
+        )
+        assert event_id_unique, (
+            "events.event_id should have a unique constraint (via PK, unique constraint, or unique index)"
+        )
 
     def test_kafka_connection_works(self, quickstart_kafka_brokers: str):
         """Verify Kafka/Redpanda connection is functional."""
@@ -374,7 +385,7 @@ class TestModelArtifacts:
         with open(metadata_path) as f:
             metadata = json.load(f)
 
-        required_fields = ["version", "feature_order", "band_thresholds", "params_hash"]
+        required_fields = ["model_version", "feature_order", "band_thresholds", "params_hash"]
         for field in required_fields:
             assert field in metadata, f"Missing metadata field: {field}"
 

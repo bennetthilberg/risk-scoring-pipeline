@@ -1,3 +1,6 @@
+import uuid
+from datetime import UTC, datetime
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -11,6 +14,22 @@ def create_integration_app() -> FastAPI:
     app.include_router(events.router, prefix="/events", tags=["events"])
     app.include_router(scores.router, prefix="/score", tags=["scores"])
     return app
+
+
+def make_api_test_event(event_id: uuid.UUID | None = None, user_id: str | None = None) -> dict:
+    """Create a test event with unique identifiers."""
+    return {
+        "event_id": str(event_id or uuid.uuid4()),
+        "event_type": "signup",
+        "user_id": user_id or f"api-test-user-{uuid.uuid4().hex[:8]}",
+        "ts": datetime.now(UTC).isoformat(),
+        "schema_version": 1,
+        "payload": {
+            "email_domain": "example.com",
+            "country": "US",
+            "device_id": f"device-{uuid.uuid4().hex[:8]}",
+        },
+    }
 
 
 @pytest.fixture
@@ -34,28 +53,30 @@ def integration_client(db_session, mock_producer):
 
 @pytest.mark.integration
 class TestAPIWithDatabase:
-    def test_post_event_writes_to_db(self, integration_client, sample_signup_event, db_session):
-        response = integration_client.post("/events", json=sample_signup_event)
+    def test_post_event_writes_to_db(self, integration_client, db_session):
+        test_event = make_api_test_event()
+
+        response = integration_client.post("/events", json=test_event)
         assert response.status_code == 202
 
         from shared.db import Event
 
-        event = db_session.query(Event).filter_by(event_id=sample_signup_event["event_id"]).first()
+        event = db_session.query(Event).filter_by(event_id=test_event["event_id"]).first()
 
         assert event is not None
-        assert event.user_id == sample_signup_event["user_id"]
+        assert event.user_id == test_event["user_id"]
         assert event.event_type == "signup"
         assert event.raw_payload_hash is not None
 
-    def test_post_event_idempotency_key_stored(
-        self, integration_client, sample_signup_event, db_session
-    ):
-        response = integration_client.post("/events", json=sample_signup_event)
+    def test_post_event_idempotency_key_stored(self, integration_client, db_session):
+        test_event = make_api_test_event()
+
+        response = integration_client.post("/events", json=test_event)
         assert response.status_code == 202
 
         from shared.db import Event
 
-        event = db_session.query(Event).filter_by(event_id=sample_signup_event["event_id"]).first()
+        event = db_session.query(Event).filter_by(event_id=test_event["event_id"]).first()
 
         assert event is not None
         assert len(event.raw_payload_hash) == 64
@@ -64,8 +85,10 @@ class TestAPIWithDatabase:
         from shared import utcnow
         from shared.db import RiskScore
 
+        unique_user = f"user-integration-{uuid.uuid4().hex[:8]}"
+
         score = RiskScore(
-            user_id="user-integration-test",
+            user_id=unique_user,
             score=0.55,
             band="med",
             computed_at=utcnow(),
@@ -75,10 +98,10 @@ class TestAPIWithDatabase:
         db_session.add(score)
         db_session.commit()
 
-        response = integration_client.get("/score/user-integration-test")
+        response = integration_client.get(f"/score/{unique_user}")
         assert response.status_code == 200
         data = response.json()
-        assert data["user_id"] == "user-integration-test"
+        assert data["user_id"] == unique_user
         assert data["score"] == 0.55
         assert data["band"] == "med"
 
@@ -113,41 +136,45 @@ class TestMigrations:
 
 @pytest.mark.integration
 class TestAPIIdempotency:
-    def test_duplicate_event_returns_202(self, integration_client, sample_signup_event, db_session):
-        response1 = integration_client.post("/events", json=sample_signup_event)
+    def test_duplicate_event_returns_202(self, integration_client, db_session):
+        test_event = make_api_test_event()
+
+        response1 = integration_client.post("/events", json=test_event)
         assert response1.status_code == 202
 
-        response2 = integration_client.post("/events", json=sample_signup_event)
+        response2 = integration_client.post("/events", json=test_event)
         assert response2.status_code == 202
 
         data = response2.json()
-        assert data["event_id"] == sample_signup_event["event_id"]
+        assert data["event_id"] == test_event["event_id"]
         assert data["status"] == "accepted"
 
-    def test_duplicate_event_no_duplicate_db_record(
-        self, integration_client, sample_signup_event, db_session
-    ):
-        integration_client.post("/events", json=sample_signup_event)
-        integration_client.post("/events", json=sample_signup_event)
+    def test_duplicate_event_no_duplicate_db_record(self, integration_client, db_session):
+        test_event = make_api_test_event()
+
+        integration_client.post("/events", json=test_event)
+        integration_client.post("/events", json=test_event)
 
         from shared.db import Event
 
-        events = db_session.query(Event).filter_by(event_id=sample_signup_event["event_id"]).all()
+        events = db_session.query(Event).filter_by(event_id=test_event["event_id"]).all()
         assert len(events) == 1
 
     def test_duplicate_with_unpublished_retries_publish(
-        self, integration_client, sample_signup_event, db_session, mock_producer
+        self, integration_client, db_session, mock_producer
     ):
         from shared import utcnow
         from shared.db import Event
 
+        test_event = make_api_test_event()
+
         event = Event(
-            event_id=sample_signup_event["event_id"],
-            user_id=sample_signup_event["user_id"],
+            event_id=test_event["event_id"],
+            user_id=test_event["user_id"],
             event_type="signup",
             ts=utcnow(),
             schema_version=1,
-            payload_json=sample_signup_event["payload"],
+            payload_json=test_event["payload"],
             raw_payload_hash="abc123",
             accepted_at=utcnow(),
             published_at=None,
@@ -157,24 +184,24 @@ class TestAPIIdempotency:
 
         mock_producer.produce.reset_mock()
 
-        response = integration_client.post("/events", json=sample_signup_event)
+        response = integration_client.post("/events", json=test_event)
         assert response.status_code == 202
 
         mock_producer.produce.assert_called_once()
 
-    def test_published_event_not_republished(
-        self, integration_client, sample_signup_event, db_session, mock_producer
-    ):
+    def test_published_event_not_republished(self, integration_client, db_session, mock_producer):
         from shared import utcnow
         from shared.db import Event
 
+        test_event = make_api_test_event()
+
         event = Event(
-            event_id=sample_signup_event["event_id"],
-            user_id=sample_signup_event["user_id"],
+            event_id=test_event["event_id"],
+            user_id=test_event["user_id"],
             event_type="signup",
             ts=utcnow(),
             schema_version=1,
-            payload_json=sample_signup_event["payload"],
+            payload_json=test_event["payload"],
             raw_payload_hash="abc123",
             accepted_at=utcnow(),
             published_at=utcnow(),
@@ -184,7 +211,7 @@ class TestAPIIdempotency:
 
         mock_producer.produce.reset_mock()
 
-        response = integration_client.post("/events", json=sample_signup_event)
+        response = integration_client.post("/events", json=test_event)
         assert response.status_code == 202
 
         mock_producer.produce.assert_not_called()

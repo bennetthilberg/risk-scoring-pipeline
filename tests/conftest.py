@@ -155,19 +155,23 @@ def migrate_db(engine) -> None:
 
 @pytest.fixture
 def db_session(engine, migrate_db) -> Generator:
-    """Database session that rolls back after each test.
+    """Database session with nested transaction isolation.
 
-    This provides test isolation without needing to recreate the schema.
+    Uses a connection-level transaction with SAVEPOINT for test isolation.
+    All changes are rolled back after each test, including commits.
     """
-    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.orm import Session
 
-    Session = sessionmaker(bind=engine)
-    session = Session()
+    connection = engine.connect()
+    transaction = connection.begin()
+
+    session = Session(bind=connection, join_transaction_mode="create_savepoint")
 
     yield session
 
-    session.rollback()
     session.close()
+    transaction.rollback()
+    connection.close()
 
 
 # ============================================================================

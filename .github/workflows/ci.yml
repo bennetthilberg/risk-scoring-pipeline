@@ -93,6 +93,9 @@ jobs:
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/riskdb
 
+      - name: Train model for integration tests
+        run: python scripts/train.py
+
       - name: Run integration tests
         run: pytest -m integration -v --tb=short
         env:
@@ -143,6 +146,9 @@ jobs:
         run: alembic upgrade head
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/riskdb
+
+      - name: Train model for smoke tests
+        run: python scripts/train.py
 
       - name: Run smoke tests
         run: pytest tests/smoke/ -v --tb=short
