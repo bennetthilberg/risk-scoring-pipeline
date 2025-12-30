@@ -109,7 +109,7 @@ jobs:
         run: docker compose -f infra/docker-compose.yml down -v
 
   smoke-test:
-    name: Smoke Test (Full Stack)
+    name: Smoke Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

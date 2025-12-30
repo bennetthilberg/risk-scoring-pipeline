@@ -403,8 +403,8 @@ class TestModelArtifacts:
         if not os.path.exists(model_path):
             pytest.skip("Model not trained yet")
 
-        model = RiskModel.load(model_dir)
-        assert model is not None
+        model = RiskModel(model_dir)
+        model.load()
 
         test_features = {
             "txn_count_24h": 5.0,
@@ -420,6 +420,7 @@ class TestModelArtifacts:
         assert 0.0 <= score <= 1.0
         assert band.value in ["low", "med", "high"]
         assert isinstance(top_features, dict)
+        assert len(top_features) > 0
 
 
 class TestEndToEndFlow:

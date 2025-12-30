@@ -281,3 +281,92 @@ class TestModelSingleton:
 
         reset_model()
         assert model_module._model_instance is None
+
+
+@pytest.mark.unit
+class TestRiskModelAPIContract:
+    """Tests to verify correct API usage patterns and prevent common misuse."""
+
+    def test_load_is_instance_method_not_class_method(self, sample_model_dir):
+        """Verify that load() must be called on an instance, not the class.
+
+        Calling RiskModel.load(path) instead of RiskModel(path).load() is a common
+        mistake. This test ensures such misuse fails with a clear error.
+        """
+        with pytest.raises(AttributeError, match="model_dir"):
+            RiskModel.load(sample_model_dir)
+
+    def test_correct_instantiation_pattern(self, sample_model_dir):
+        """Verify the correct pattern: create instance, then call load()."""
+        model = RiskModel(sample_model_dir)
+        assert model._loaded is False
+
+        model.load()
+        assert model._loaded is True
+        assert model.version == "test-v1"
+
+    def test_model_requires_path_argument(self):
+        """Verify RiskModel requires a model_dir argument."""
+        with pytest.raises(TypeError):
+            RiskModel()
+
+    def test_model_accepts_string_path(self, sample_model_dir):
+        """Verify RiskModel accepts string path."""
+        model = RiskModel(str(sample_model_dir))
+        model.load()
+        assert model._loaded is True
+
+    def test_model_accepts_path_object(self, sample_model_dir):
+        """Verify RiskModel accepts Path object."""
+        model = RiskModel(sample_model_dir)
+        model.load()
+        assert model._loaded is True
+
+    def test_operations_before_load_raise_runtime_error(self, sample_model_dir):
+        """Verify all operations raise RuntimeError if load() not called."""
+        model = RiskModel(sample_model_dir)
+        features = {"txn_count_24h": 1.0}
+
+        with pytest.raises(RuntimeError, match="Model not loaded"):
+            model.score(features)
+
+        with pytest.raises(RuntimeError, match="Model not loaded"):
+            model.score_to_band(0.5)
+
+        with pytest.raises(RuntimeError, match="Model not loaded"):
+            model.explain(features)
+
+        with pytest.raises(RuntimeError, match="Model not loaded"):
+            model.predict(features)
+
+        with pytest.raises(RuntimeError, match="Model not loaded"):
+            _ = model.version
+
+        with pytest.raises(RuntimeError, match="Model not loaded"):
+            _ = model.metadata
+
+    def test_double_load_is_safe(self, sample_model_dir):
+        """Verify calling load() twice doesn't cause issues."""
+        model = RiskModel(sample_model_dir)
+        model.load()
+        model.load()
+        assert model._loaded is True
+
+    def test_get_model_helper_returns_loaded_model(self, sample_model_dir, monkeypatch):
+        """Verify get_model() helper returns a fully loaded model."""
+        reset_model()
+
+        monkeypatch.setattr(
+            "shared.config.get_settings",
+            lambda: type("Settings", (), {"model_path": str(sample_model_dir / "model.pkl")})(),
+        )
+
+        model = get_model(sample_model_dir)
+        assert model._loaded is True
+        assert model.version == "test-v1"
+
+        features = {"txn_count_24h": 1.0}
+        score = model.score(features)
+        assert isinstance(score, float)
+
+        reset_model()
